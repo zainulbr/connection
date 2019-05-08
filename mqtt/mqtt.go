@@ -127,3 +127,7 @@ func Close(timeout time.Duration, key ...string) error {
 
 	return nil
 }
+
+func init() {
+	store = sync.Map{}
+}
