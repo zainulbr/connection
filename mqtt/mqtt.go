@@ -112,6 +112,11 @@ func Close(timeout time.Duration, key ...string) error {
 		if client == nil {
 			return fmt.Errorf("client not available")
 		}
+
+		if !client.IsConnectionOpen() {
+			log.Println("client already disconnected")
+		}
+
 		client.Disconnect(uint(timeout))
 		return nil
 	}
@@ -121,6 +126,7 @@ func Close(timeout time.Duration, key ...string) error {
 	}
 
 	store.Range(func(key interface{}, value interface{}) bool {
+		log.Println("disconnect mqtt client ", key)
 		closeConn(Client(key.(string)))
 		return true
 	})
