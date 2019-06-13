@@ -45,10 +45,10 @@ func createClientOptions(uri *url.URL, clientId ...string) *mqtt.ClientOptions {
 	opts.SetPassword(password)
 
 	_clientId := time.Now().Format(time.RFC3339Nano)
-	if len(clientId) > 0 {
+	if len(clientId) > 0 && clientId[0] != "" {
 		_clientId = clientId[0]
 	}
-
+	log.Println("connected mqtt client id", _clientId)
 	opts.SetClientID(_clientId)
 
 	return opts
@@ -62,7 +62,7 @@ func New(uri string, timeout time.Duration, key ...string) (mqtt.Client, error) 
 	}
 
 	_key := _default
-	if len(key) > 0 {
+	if len(key) > 0 && key[0] != "" {
 		_key = key[0]
 	}
 
