@@ -14,6 +14,14 @@ import (
 const _default string = "default"
 
 var store sync.Map
+var storeSubscription sync.Map
+
+type Subscription struct {
+	Topic   string
+	Qos     int
+	Handler SubscribeHandler
+}
+type SubscribeHandler func([]byte)
 
 func connect(opts *mqtt.ClientOptions, timeout ...time.Duration) (mqtt.Client, error) {
 	client := mqtt.NewClient(opts)
@@ -69,7 +77,17 @@ func createClientOptions(uri *url.URL, clientId ...string) *mqtt.ClientOptions {
 	})
 
 	opts.SetOnConnectHandler(func(client mqtt.Client) {
+		if !opts.AutoReconnect {
+			return
+		}
 		log.Println("on connect mqtt connected")
+		err := RestartSubscribe(client)
+		if err != nil {
+			log.Println("resubscribe ", err)
+			return
+		}
+		log.Println("resubscribe success")
+
 	})
 
 	_clientId := time.Now().Format(time.RFC3339Nano)
@@ -104,18 +122,51 @@ func New(uri string, timeout time.Duration, key ...string) (mqtt.Client, error) 
 	return client, nil
 }
 
-type SubscribeHandler func([]byte)
-
-// Subscribe mqqt Subscribe helper
+// Subscribe mqqt Subscribe helper, unique topic as id
 func Subscribe(topic string, qos int, f SubscribeHandler, key ...string) error {
 	client := Client(key...)
 	if client == nil {
 		return fmt.Errorf("mqtt is not connected")
 	}
 
+	storeSubscription.Store(topic, Subscription{
+		Topic:   topic,
+		Qos:     qos,
+		Handler: f,
+	})
+
 	client.Subscribe(topic, byte(qos), func(client mqtt.Client, msg mqtt.Message) {
 		f(msg.Payload())
 	})
+	return nil
+}
+
+// RestartSubscribe restart subscription after reconnecting state
+func RestartSubscribe(client mqtt.Client) error {
+	storeSubscription.Range(func(key, v interface{}) bool {
+		subscription, ok := v.(Subscription)
+		if !ok {
+			return true
+		}
+
+		// stop subscribe
+		token := client.Unsubscribe(subscription.Topic)
+		for !token.WaitTimeout(time.Second * 5) {
+			log.Println("unsubscribe", token.Error())
+		}
+
+		// start subscribe
+		token = client.Subscribe(subscription.Topic, byte(subscription.Qos), func(client mqtt.Client, msg mqtt.Message) {
+			subscription.Handler(msg.Payload())
+		})
+
+		for !token.WaitTimeout(time.Second * 5) {
+			log.Println("resubscribe", token.Error())
+		}
+
+		return true
+	})
+
 	return nil
 }
 
