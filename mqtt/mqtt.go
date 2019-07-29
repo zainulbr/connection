@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"strconv"
 	"sync"
 	"time"
 
@@ -29,7 +30,6 @@ func connect(opts *mqtt.ClientOptions, timeout ...time.Duration) (mqtt.Client, e
 	if err := token.Error(); err != nil {
 		log.Fatal(err)
 	}
-
 	if !client.IsConnected() {
 		return nil, fmt.Errorf("client not connected")
 	}
@@ -43,6 +43,34 @@ func createClientOptions(uri *url.URL, clientId ...string) *mqtt.ClientOptions {
 	opts.SetUsername(uri.User.Username())
 	password, _ := uri.User.Password()
 	opts.SetPassword(password)
+
+	if recon := uri.Query().Get("autoreconnect"); recon == "true" {
+		log.Println("set auto reconnect")
+		opts.SetAutoReconnect(true)
+	} else if recon == "false" {
+		opts.SetAutoReconnect(false)
+	}
+
+	if durationString := uri.Query().Get("keepalive"); durationString != "" {
+		duration, err := strconv.Atoi(durationString)
+		if err == nil {
+			if duration < 1 {
+				log.Println("unset keep alive timeout")
+			} else {
+				log.Println("set keep alive timeout ", duration)
+
+			}
+			opts.SetKeepAlive(time.Duration(duration) * time.Second)
+		}
+	}
+
+	opts.SetConnectionLostHandler(func(client mqtt.Client, err error) {
+		log.Println("on mqtt connection lost")
+	})
+
+	opts.SetOnConnectHandler(func(client mqtt.Client) {
+		log.Println("on connect mqtt connected")
+	})
 
 	_clientId := time.Now().Format(time.RFC3339Nano)
 	if len(clientId) > 0 && clientId[0] != "" {
@@ -113,7 +141,7 @@ func Close(timeout time.Duration, key ...string) error {
 			return fmt.Errorf("client not available")
 		}
 
-		if !client.IsConnectionOpen() {
+		if !client.IsConnected() {
 			log.Println("client already disconnected")
 		}
 
